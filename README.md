@@ -80,7 +80,7 @@ available options are:
 
   Defines how the list should be printed. The following optionsa are available:
 
-  * `GivingOrder` prints in a chain of givers.
+  * `GivingOrder` prints in a chain of givers. For instance,
     ```
     Alex → Jamie
     Jamie → Sam
@@ -88,16 +88,4 @@ available options are:
     Charlie → Alex
     ```
   * `ConfigOrder` prints in whatever order is listed in the config file.
-    ```
-    Jamie → Sam
-    Sam → Charlie
-    Alex → Jamie
-    Charlie → Alex
-    ```
   * `AlphabeticalOrder` prints alphabetically by giver.
-    ```
-    Alex → Jamie
-    Charlie → Alex
-    Jamie → Sam
-    Sam → Charlie
-    ```
