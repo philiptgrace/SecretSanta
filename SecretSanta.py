@@ -3,18 +3,18 @@
 
 """
 Secret Santa List Generator
-==
+===========================
 
-Phil Grace November 2018
-           December 2019--January 2020
+Phil Grace, November 2018 and December 2019
 
-`SecretSanta.py` parses the file config.yaml and generates a Secret Santa list
+`SecretSanta.py` parses the config YAML file and generates a Secret Santa list
 according to the rules set by the user.
 
-The central object in this program is GivingMatrix, which keeps track of
+The central object in this program is `GivingMatrix`, which keeps track of
 who the next person on the list could be. Entries are set to zero according to
-a set of rules in the YAML file (which the user can turn on or off), a receiver
-is chosen for every giver.
+a set of rules in the YAML file (which the user can turn on or off), and a
+receiver is chosen for every giver with probabilities defined in the
+`GivingMatrix`.
 """
 
 # TODO:
@@ -22,6 +22,7 @@ is chosen for every giver.
 # - Freeze into EXE using https://docs.python-guide.org/shipping/freezing/#py2exe or
 #   https://stackoverflow.com/questions/2963263/how-can-i-create-a-simple-message-box-in-python and
 #   https://www.flaticon.com/free-icon/santa-claus_290454
+# - Docstrings, I guess.
 
 import yaml
 import sys
@@ -67,11 +68,9 @@ class SecretSanta():
             GivingMatrix[Giver][Giver] = 0
 
             # Remove partners
-            try:
-                if not self.__PartnerToPartnerAllowed__ and GiverData["Partner"]:
-                    GivingMatrix[Giver][GiverData["Partner"]] = 0
-            except KeyError:
-                pass
+            GiverPartner = self.get_partner(Giver)
+            if not self.__PartnerToPartnerAllowed__ and GiverPartner:
+                GivingMatrix[Giver][GiverPartner] = 0
 
         GivingMatrix = self.weight_history(GivingMatrix)
 
@@ -86,7 +85,7 @@ class SecretSanta():
         return choice(self.__Names__)
 
 
-    def try_santas_list(self):
+    def __try_santas_list(self):
         """If one person has no viable givers, then will return `None`."""
         SantasList = []
         GivingMatrix = self.setup_giving_matrix()
@@ -117,7 +116,7 @@ class SecretSanta():
     def get_santas_list(self):
         MaxTries = 10000
         for i in range(MaxTries):
-            SantasList = self.try_santas_list()
+            SantasList = self.__try_santas_list()
             if SantasList:
                 return SantasList
         sys.exit("{MaxTries} iterations ran without finding a valid list!\nMaybe try loosening some of the rules in config.yaml.")
@@ -128,7 +127,7 @@ class SecretSanta():
         try:
             return PairLookup[Name]
         except KeyError:
-            pass
+            return
 
 
     def get_receiver(self, Giver, SantasList):
@@ -136,9 +135,15 @@ class SecretSanta():
         try:
             return PairLookup[Giver]
         except KeyError:
-            pass
+            return
 
 
+    def get_partner(self, Name):
+        try:
+            return self.__PeopleData__[Name]["Partner"]
+        except KeyError:
+            return
+        
     def select_receiver(self, Giver, GivingMatrixRow, InitialGiver, SantasList):
         """Returns `None` if no eligible receiver can be found."""
         # Don't allow the first giver to be a receiver until the list is almost complete
@@ -165,14 +170,8 @@ class SecretSanta():
                         GivingMatrix[Giver][HistoryReceiver] = self.history_weighting_function(HistoryDepth, GivingMatrix[Giver][HistoryReceiver])
 
                         # Give the same weighting across couples if one member is part of the history
-                        try:
-                            GiversPartner = GiverData["Partner"]
-                        except KeyError:
-                            GiversPartner = None
-                        try:
-                            ReceiversPartner = self.__PeopleData__[HistoryReceiver]["Partner"]
-                        except KeyError:
-                            ReceiversPartner = None
+                        GiversPartner = self.get_partner(Giver)
+                        ReceiversPartner = self.get_partner(Receiver)
     
                         if self.__WeightCoupleHistory__:
                             if ReceiversPartner:
