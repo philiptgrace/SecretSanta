@@ -98,7 +98,7 @@ class SecretSanta():
         return choice(self.__Names__)
 
 
-    def __try_santas_list(self):
+    def try_santas_list(self):
         """If one person has no viable givers, then will return `None`."""
         SantasList = []
         GivingMatrix = self.setup_giving_matrix()
@@ -129,7 +129,7 @@ class SecretSanta():
     def get_santas_list(self):
         MaxTries = 10000
         for i in range(MaxTries):
-            SantasList = self.__try_santas_list()
+            SantasList = self.try_santas_list()
             if SantasList:
                 return SantasList
         sys.exit(f"{MaxTries} iterations ran without finding a valid list!\nMaybe try loosening some of the rules in `config/rules.yaml`.")
@@ -153,6 +153,7 @@ class SecretSanta():
 
     def get_partner(self, Name):
         return self.__PeopleData__[Name]["Partner"]
+
 
     def select_receiver(self, Giver, GivingMatrixRow, InitialGiver, SantasList):
         """Returns `None` if no eligible receiver can be found."""
