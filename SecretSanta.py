@@ -30,14 +30,10 @@ from random import choice, choices
 
 class SecretSanta():
     def __init__(self):
-        # Separate into separate files so we don't need indentation?
-        YAMLFileName = "config.yaml"
-        self.__Config__ = self.read_yaml(YAMLFileName)
-
-        self.__PeopleData__ = self.__Config__["People"]
+        self.__PeopleData__ = self.read_yaml("people")
         self.__Names__ = list(self.__PeopleData__.keys())
 
-        self.__Rules__ = self.__Config__["Rules"]
+        self.__Rules__ = self.read_yaml("rules")
         self.__WeightHistory__ = self.__Rules__["WeightHistory"]
         self.__WeightCoupleHistory__ = self.__Rules__["WeightCoupleHistory"]
         self.__GrandfatherPeriod__ = self.__Rules__["GrandfatherPeriod"]
@@ -45,18 +41,19 @@ class SecretSanta():
         self.__AllowTriangles__ = self.__Rules__["Triangles"]
         self.__AllowCoupleToCouple__ = self.__Rules__["CoupleToCouple"]
 
-        self.__OutputRules__ = self.__Config__["Output"]
+        self.__OutputRules__ = self.read_yaml("output")
         self.__PrintingOrder__ = self.__OutputRules__["PrintingOrder"]
         self.__WriteToFile__ = self.__OutputRules__["WriteToFile"]
 
-        self.__Rigging__ = self.__Config__["Rigging"]
+        self.__Rigging__ = self.read_yaml("rigging")
 
 
-    def read_yaml(self, YAMLFileName):
+    def read_yaml(self, YAMLLabel):
+        YAMLFileName = f"config/{YAMLLabel}.yaml"
         try:
             return yaml.safe_load(open(YAMLFileName, "r"))
         except yaml.YAMLError as e:
-            sys.exit(f"Error in configuration file: {e}")
+            sys.exit(f"Error in configuration file {YAMLFileName}: {e}")
 
 
     def setup_giving_matrix(self):
