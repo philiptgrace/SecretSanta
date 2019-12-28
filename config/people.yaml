@@ -1,0 +1,20 @@
+Jamie:
+  Partner: Charlie
+  History:
+    - Sam
+    - 
+
+Sam:
+  Partner:
+  History:
+    - Charlie
+
+Alex:
+  Partner: 
+  History:
+    - Jamie
+
+Charlie:
+  Partner: Jamie
+  History:
+    - Alex
