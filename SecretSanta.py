@@ -1,286 +1,270 @@
-# Secret Santa List Generator
-# Phil Grace November 2018
-#
-# SecretSanta.py parses the file config.yaml and generates a Secret Santa list
-# according to the rules set by the user.
-#
-# The central object in this program is WeightingMatrix, which keeps track of
-# who the next person on the list could be. Entries are set to zero according to
-# a set of rules in the YAML file (which the user can turn on or off)
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+Secret Santa List Generator
+==
+
+Phil Grace November 2018
+           December 2019--January 2020
+
+`SecretSanta.py` parses the file config.yaml and generates a Secret Santa list
+according to the rules set by the user.
+
+The central object in this program is GivingMatrix, which keeps track of
+who the next person on the list could be. Entries are set to zero according to
+a set of rules in the YAML file (which the user can turn on or off), a receiver
+is chosen for every giver.
+"""
+
+# TODO:
+# - Verify PeopleData is valid when reading in (history and partners are all spelled correctly)
+# - Freeze into EXE using https://docs.python-guide.org/shipping/freezing/#py2exe or
+#   https://stackoverflow.com/questions/2963263/how-can-i-create-a-simple-message-box-in-python and
+#   https://www.flaticon.com/free-icon/santa-claus_290454
 
 import yaml
 import sys
-from time import time
 import numpy as np
-from numpy.random import choice
-from collections import OrderedDict
+from random import choice, choices
 
-# Define some utility functions
-def Person2Number(Name):
-    return Names.index(Name)
+class SecretSanta():
+    def __init__(self):
+        # Separate into separate files so we don't need indentation?
+        YAMLFileName = "config.yaml"
+        self.__Config__ = self.read_yaml(YAMLFileName)
 
-def GetPartner(Name):
-    CurrentInfo = NameData[Name]
-    if 'Partner' in CurrentInfo and CurrentInfo['Partner'] != None:
-        return CurrentInfo['Partner']
-    else:
-        return None
+        self.__PeopleData__ = self.__Config__["People"]
+        self.__Names__ = list(self.__PeopleData__.keys())
 
-def GetGiver(Name):
-    if SantasList.index(Name)>0 and Name in SantasList:
-        Position = SantasList.index(Name)
-        Giver = SantasList[Position-1]
-    elif SantasList.index(Name)==0 and len(SantasList)==nNames and Name in SantasList:
-        Giver = SantasList[-1]
-    else:
-        Giver = None
+        self.__Rules__ = self.__Config__["Rules"]
+        self.__WeightHistory__ = self.__Rules__["WeightHistory"]
+        self.__WeightCoupleHistory__ = self.__Rules__["WeightCoupleHistory"]
+        self.__GrandfatherPeriod__ = self.__Rules__["GrandfatherPeriod"]
+        self.__PartnerToPartnerAllowed__ = self.__Rules__["PartnerToPartner"]
+        self.__AllowTriangles__ = self.__Rules__["Triangles"]
+        self.__AllowCoupleToCouple__ = self.__Rules__["CoupleToCouple"]
 
-    return Giver
+        self.__OutputRules__ = self.__Config__["Output"]
+        self.__PrintingOrder__ = self.__OutputRules__["PrintingOrder"]
+        self.__WriteToFile__ = self.__OutputRules__["WriteToFile"]
 
-def GetReceiver(Name):
-    if SantasList.index(Name)<nNames-1 and Name in SantasList:
-        Position = SantasList.index(Name)
-        Giver = SantasList[Position+1]
-    elif SantasList.index(Name)==nNames-1 and Name in SantasList:
-        Giver = SantasList[0]
-    else:
-        Giver = None
+        self.__Rigging__ = self.__Config__["Rigging"]
 
-    return Giver
 
-def GetHistory(Name):
-    CurrentInfo = NameData[Name]
-    if 'History' not in CurrentInfo or \
-       CurrentInfo['History'] == None or \
-           CurrentInfo['History'] == [] or \
-               CurrentInfo['History'] == [None]:
-        return None
-    else:
-        return CurrentInfo['History']
+    def read_yaml(self, YAMLFileName):
+        try:
+            return yaml.safe_load(open(YAMLFileName, "r"))
+        except yaml.YAMLError as e:
+            sys.exit(f"Error in configuration file: {e}")
 
-def WeightHistory(t, GrandfatherPeriod):
-    # Can edit exponent to change functional form of weighting
-    exp = 2.0
 
-    if GrandfatherPeriod == 0:
-        weighting = 1
-    else:
-        weighting = min((t/GrandfatherPeriod)**(exp), 1)
-    return weighting
+    def setup_giving_matrix(self):
+        GivingMatrix = {Name: {Name: 1 for Name in self.__Names__} for Name in self.__Names__}
 
-def RemoveChoice(CurrentName, InvalidName):
-    global WeightingMatrix
+        for Giver, GiverData in self.__PeopleData__.items():
+            # Remove self
+            GivingMatrix[Giver][Giver] = 0
 
-    CurrentNumber = Person2Number(CurrentName)
-    InvalidNumber = Person2Number(InvalidName)
-    WeightingMatrix[CurrentNumber, InvalidNumber] = 0
+            # Remove partners
+            try:
+                if not self.__PartnerToPartnerAllowed__ and GiverData["Partner"]:
+                    GivingMatrix[Giver][GiverData["Partner"]] = 0
+            except KeyError:
+                pass
 
-def GrandfatherHistory(CurrentName):
-    global WeightingMatrix
+        GivingMatrix = self.weight_history(GivingMatrix)
+
+        return GivingMatrix
+
+
+    def select_starting_name(self):
+        # Have a better chance of getting the list right if we start with one of
+        # the rigged givers.
+        if self.__Rigging__:
+            return choice(list(self.__Rigging__.keys()))
+        return choice(self.__Names__)
+
+
+    def try_santas_list(self):
+        """If one person has no viable givers, then will return `None`."""
+        SantasList = []
+        GivingMatrix = self.setup_giving_matrix()
+
+        InitialGiver = self.select_starting_name()
+        Giver = InitialGiver
+
+        while len(SantasList) < len(self.__Names__):
+            GivingMatrixRow = GivingMatrix[Giver]
+            Receiver = self.select_receiver(Giver, GivingMatrixRow, InitialGiver, SantasList)
+            if not Receiver:
+                return
+
+            SantasList.append((Giver, Receiver))
+
+            # Remove this name from everyone's potential receivers, and remove
+            # now-invalid combinations
+            for Name in self.__Names__:
+                GivingMatrix[Name][Receiver] = 0
+            GivingMatrix = self.remove_triangles(Giver, GivingMatrix, SantasList)
+            GivingMatrix = self.remove_couple_to_couple(Giver, GivingMatrix, SantasList)
+
+            Giver = Receiver
+
+        return SantasList
+
+
+    def get_santas_list(self):
+        MaxTries = 10000
+        for i in range(MaxTries):
+            SantasList = self.try_santas_list()
+            if SantasList:
+                return SantasList
+        sys.exit("{MaxTries} iterations ran without finding a valid list!\nMaybe try loosening some of the rules in config.yaml.")
+
+
+    def get_giver(self, Receiver, SantasList):
+        PairLookup = {Receiver: Giver for (Giver, Receiver) in SantasList}
+        try:
+            return PairLookup[Name]
+        except KeyError:
+            pass
+
+
+    def get_receiver(self, Giver, SantasList):
+        PairLookup = {Giver: Receiver for (Giver, Receiver) in SantasList}
+        try:
+            return PairLookup[Giver]
+        except KeyError:
+            pass
+
+
+    def select_receiver(self, Giver, GivingMatrixRow, InitialGiver, SantasList):
+        """Returns `None` if no eligible receiver can be found."""
+        # Don't allow the first giver to be a receiver until the list is almost complete
+        if len(SantasList) < len(self.__Names__) - 1:
+            GivingMatrixRow[InitialGiver] = 0
+
+        PossibleReceivers = list(GivingMatrixRow.keys())
+        ReceiverWeights = list(GivingMatrixRow.values())
+
+        if self.__Rigging__ and Giver in self.__Rigging__.keys():
+            return self.__Rigging__[Giver]
+
+        if sum(ReceiverWeights):
+            return choices(PossibleReceivers, ReceiverWeights)[0]
+
+
+    def weight_history(self, GivingMatrix):
+        for Giver, GiverData in self.__PeopleData__.items():
+            if (self.__WeightHistory__ and
+                GiverData["History"]):
+
+                for HistoryDepth, HistoryReceiver in enumerate(GiverData["History"]):
+                    if HistoryReceiver:
+                        GivingMatrix[Giver][HistoryReceiver] = self.history_weighting_function(HistoryDepth, GivingMatrix[Giver][HistoryReceiver])
+
+                        # Give the same weighting across couples if one member is part of the history
+                        try:
+                            GiversPartner = GiverData["Partner"]
+                        except KeyError:
+                            GiversPartner = None
+                        try:
+                            ReceiversPartner = self.__PeopleData__[HistoryReceiver]["Partner"]
+                        except KeyError:
+                            ReceiversPartner = None
     
-    CurrentNumber = Person2Number(CurrentName)
-    History = GetHistory(CurrentName)
-    
-    if History != None:
-        for HistoryDepth, HistoryName in enumerate(History):
-            if HistoryName == None: continue
+                        if self.__WeightCoupleHistory__:
+                            if ReceiversPartner:
+                                GivingMatrix[Giver][ReceiversPartner] = self.history_weighting_function(HistoryDepth, GivingMatrix[Giver][ReceiversPartner])
+                            if GiversPartner:
+                                GivingMatrix[GiversPartner][HistoryReceiver] = self.history_weighting_function(HistoryDepth, GivingMatrix[GiversPartner][HistoryReceiver])
+                            if GiversPartner and ReceiversPartner:
+                                GivingMatrix[GiversPartner][ReceiversPartner] = self.history_weighting_function(HistoryDepth, GivingMatrix[GiversPartner][ReceiversPartner])
 
-            HistoryNumber = Person2Number(HistoryName)
-            HistoryWeighting = WeightHistory(HistoryDepth, GrandfatherPeriod)
-            WeightingMatrix[CurrentNumber, HistoryNumber] = min(WeightingMatrix[CurrentNumber, HistoryNumber], HistoryWeighting)    # WeightingMatrix[CurrentNumber, HistoryNumber] = 
+        return GivingMatrix
 
-# Load file
-try:
-    config = yaml.safe_load(open('config.yaml', 'r'))
-except yaml.YAMLError as e:
-    print("Error in configuration file:", e)
 
-# Read in rules
-RuleDict = config['Rules']
+    def remove_triangles(self, Giver, GivingMatrix, SantasList):
+        if not self.__AllowTriangles__:
+            pass
 
-IncludeHistory    = RuleDict['IncludeHistory']
-GrandfatherPeriod = RuleDict['GrandfatherPeriod']
-PartnerToPartner  = RuleDict['PartnerToPartner']
-Triangles         = RuleDict['Triangles']
-CoupleToCouple    = RuleDict['CoupleToCouple']
-
-# Read in output specifications
-OutputDict = config['Output']
-
-PrintingOrder     = OutputDict['PrintingOrder']
-WriteToFile       = OutputDict['WriteToFile']
-PrintToScreen     = OutputDict['PrintToScreen']
-Append            = OutputDict['Append']
-assert PrintingOrder in ['GivingOrder', 'FamilyOrder', 'AlphabeticalOrder']
-
-# Read in names
-NameData = config['Names']
-Names = list(config['Names'])
-
-nNames = len(Names)
-
-# Start the iterations
-t0 = time()
-Converged = False
-nListFailed = 0
-nListInvalid = 0
-
-while not Converged:
-    # WeightingMatrix[Jamie, Charlie] is the probability of Jamie giving to Charlie
-    # We first remove all diagonal entries so people don't give to themselves
-    WeightingMatrix = np.ones(nNames) - np.identity(nNames)
-
-    StartingName = choice(Names)
-    SantasList = [StartingName]
-
-    CurrentName = StartingName
-
-    for i in range(nNames-1):
-        FinishedLoop = False   # Variable to handle breaks if list failes
-
-        CurrentNumber = Person2Number(CurrentName)
-        Partner = GetPartner(CurrentName)
+        return GivingMatrix
         
-        if Partner != None:
-    
-            # Don't let someone get matched with their partner
-            if not PartnerToPartner:
-                RemoveChoice(CurrentName, Partner)
-
-            # Don't match two couples up
-            if not PartnerToPartner:
-                # First check if partner is already in list
-                if Partner in SantasList:
-                    ParnterPosition = SantasList.index(Partner)
-
-                    # Check if the person they gave to has a partner
-                    PartnersReceiver = SantasList[ParnterPosition+1]
-                    PartnersReceiversPartner = GetPartner(PartnersReceiver)
-
-                    # Now check if the person who gave to them has a partner
-                    if ParnterPosition > 0:
-                        PartnersGiver = SantasList[ParnterPosition-1]
-                        PartnersGiversPartner = GetPartner(PartnersGiver)
-                    else:
-                        PartnersGiversPartner = None
-
-                    # Exclude any pairing involving all four people
-                    if PartnersReceiversPartner != None:
-                        RemoveChoice(CurrentName, PartnersReceiversPartner)
-                    if PartnersGiversPartner != None:
-                        RemoveChoice(CurrentName, PartnersGiversPartner)
-                    
-        if not Triangles and len(SantasList)>1:
-            Giver = SantasList[-2]
-            GiversPartner = GetPartner(Giver)
-            if GiversPartner != None:
-                RemoveChoice(CurrentName, GiversPartner)
-    
-        # Weight history to be less important
-        if IncludeHistory:
-            GrandfatherHistory(CurrentName)
-    
-        # Blank out all previous names
-        for PreviousName in SantasList:
-            if not (PreviousName == StartingName and len(SantasList) == nNames):
-                RemoveChoice(CurrentName, PreviousName)
 
 
-        # Pick the next name from probability matrix
-        p = WeightingMatrix[CurrentNumber,:]
-    
-        if sum(p) == 0: nListFailed += 1; break
-        p /= sum(p)
+    def remove_couple_to_couple(self, Giver, GivingMatrix, SantasList):
+        if not self.__AllowCoupleToCouple__:
+            pass
 
-        CurrentName = choice(Names, p=p)
-        SantasList.append(CurrentName)
+        return GivingMatrix
 
-        FinishedLoop = True
 
-    # Catch the program if it's really struggling to find a valid list
-    if nListInvalid + nListFailed >= 100:
-        print('Program took %-1.2fs to run.' % (time()-t0))
-        sys.exit('100 iterations ran without finding a valid list!\nMaybe try loosening some of the rules in config.yaml.')
+    def history_weighting_function(self, HistoryDepth, CurrentWeighting):
+        try:
+            return min((HistoryDepth/self.__GrandfatherPeriod__)**2, CurrentWeighting)
+        except ZeroDivisionError:
+            return 1
 
-    # Final checks that final name is valid
-    if FinishedLoop:
-        ListValid = True
 
-        StartPerson = SantasList[0]
-        EndPerson = SantasList[-1]
-        StartPartner = GetPartner(StartPerson)
-        EndPartner = GetPartner(EndPerson)
-
-        if not PartnerToPartner:
-            if SantasList[-1] == GetPartner(SantasList[0]):
-                ListValid = False
-        if not Triangles:
-            if GetReceiver(StartPerson) == EndPartner or GetGiver(EndPerson) == StartPartner: # Now broken (see latest output)
-                ListValid = False
-        if not CoupleToCouple:
-
-            if StartPartner != None and EndPartner != None:
-                if GetGiver(StartPartner) == EndPartner or \
-                   GetGiver(EndPartner) == StartPartner:
-                    ListValid = False
-
-        # Check that the last person didn't have the first person last year
-        if IncludeHistory:
-            History = GetHistory(EndPerson)
-            if History != None:
-                if History[0] == StartPerson:
-                    ListValid = False
-        
-        if ListValid:
-            Converged = True
+    def santas_list_to_string(self, SantasList):
+        if self.__PrintingOrder__ == "ConfigOrder":
+            SantasList = [(Giver, self.get_receiver(Giver, SantasList)) for Giver in self.__Names__]
+        elif self.__PrintingOrder__ == "GivingOrder":
+            pass
+        elif self.__PrintingOrder__ == "AlphabeticalOrder":
+            SantasList = sorted(SantasList)
         else:
-            nListInvalid += 1
+            sys.exit("Please privide a giving order which is either 'ConfigOrder', 'GivingOrder', or 'AlphabeticalOrder'.")
 
-print('Program took %-1.2fs to run.' % (time()-t0))
-print('Completed successfully!')
-print('Number of times a person had no options:     ', nListFailed)
-print('Number of times a generated list was invalid:', nListInvalid)
+        ListOfStrings = [f"{Giver} → {Receiver}" for Giver, Receiver in SantasList]
+        return "\n".join(ListOfStrings)
 
 
-# Print list
-Givers = SantasList
-Receivers = np.roll(SantasList, -1)
-Pairings = [[Givers[i], Receivers[i]] for i in range(nNames)]
+    def print_list(self, SantasList):
+        # TODO: make this a gui-type thing, http://easygui.sourceforge.net/
+        SantasListString = self.santas_list_to_string(SantasList)
+        print(SantasListString)
 
-ListString = ''
-# Print by order of names in SantasList
-if PrintingOrder == 'GivingOrder':
-    for i in range(nNames):
-        ListString += '%s → %s\n' % (Pairings[i][0], '→', Pairings[i][1])
 
-# Print by order of names in config.yaml
-elif PrintingOrder == 'FamilyOrder':
-    for Name in Names:
-        for Pairing in Pairings:
-            if Pairing[0] == Name:
-                ListString += '%s → %s\n' % (Pairing[0], Pairing[1])
 
-# Print names in alphabetical order
-elif PrintingOrder == 'AlphabeticalOrder':
-    for Name in sorted(Names):
-        for Pairing in Pairings:
-            if Pairing[0] == Name:
-                ListString += '%s → %s\n' % (Pairing[0], Pairing[1])
+def RemoveCoupleToCouple(CurrentName):
+    global WeightingMatrix
 
-# Print list to screen
-if PrintToScreen:
-    print()
-    print(ListString)
+    Partner = GetPartner(CurrentName)
 
-# Write list to file
-ListFileName = 'SecretSantaList.txt'
+    if Partner in SantasList and not rules['CoupleToCouple']:
+        ParnterPosition = SantasList.index(Partner)
 
-if Append:
-    f = open(ListFileName, 'a+')
-else:
-    f = open(ListFileName, 'w')
+        # Check if the person they gave to has a partner
+        PartnersReceiver = SantasList[ParnterPosition+1]
+        PartnersReceiversPartner = GetPartner(PartnersReceiver)
 
-if WriteToFile:
-    f.write(ListString)
-    f.write('\n'+20*'~'+2*'\n')
-    f.close()
+        # Now check if the person who gave to them has a partner
+        if ParnterPosition:
+            PartnersGiver = SantasList[ParnterPosition-1]
+            PartnersGiversPartner = GetPartner(PartnersGiver)
+        else:
+            PartnersGiversPartner = None
+
+        # Exclude any pairing involving all four people
+        if PartnersReceiversPartner:
+            RemoveChoice(CurrentName, PartnersReceiversPartner)
+        if PartnersGiversPartner:
+            RemoveChoice(CurrentName, PartnersGiversPartner)
+
+def RemoveTriangles(CurrentName):
+    if not rules['Triangles'] and len(SantasList)>1:
+        Giver = SantasList[-2]
+        GiversPartner = GetPartner(Giver)
+        if GiversPartner != None:
+            RemoveChoice(CurrentName, GiversPartner)
+
+
+def main():
+    Santa = SecretSanta()
+    SantasList = Santa.get_santas_list()
+    Santa.print_list(SantasList)
+
+if __name__ == "__main__":
+    main()
