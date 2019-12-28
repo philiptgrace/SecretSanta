@@ -26,7 +26,6 @@ receiver is chosen for every giver with probabilities defined in the
 
 import yaml
 import sys
-import numpy as np
 from random import choice, choices
 
 class SecretSanta():
@@ -125,7 +124,7 @@ class SecretSanta():
     def get_giver(self, Receiver, SantasList):
         PairLookup = {Receiver: Giver for (Giver, Receiver) in SantasList}
         try:
-            return PairLookup[Name]
+            return PairLookup[Receiver]
         except KeyError:
             return
 
@@ -143,7 +142,7 @@ class SecretSanta():
             return self.__PeopleData__[Name]["Partner"]
         except KeyError:
             return
-        
+
     def select_receiver(self, Giver, GivingMatrixRow, InitialGiver, SantasList):
         """Returns `None` if no eligible receiver can be found."""
         # Don't allow the first giver to be a receiver until the list is almost complete
@@ -171,8 +170,8 @@ class SecretSanta():
 
                         # Give the same weighting across couples if one member is part of the history
                         GiversPartner = self.get_partner(Giver)
-                        ReceiversPartner = self.get_partner(Receiver)
-    
+                        ReceiversPartner = self.get_partner(HistoryReceiver)
+
                         if self.__WeightCoupleHistory__:
                             if ReceiversPartner:
                                 GivingMatrix[Giver][ReceiversPartner] = self.history_weighting_function(HistoryDepth, GivingMatrix[Giver][ReceiversPartner])
@@ -184,17 +183,23 @@ class SecretSanta():
         return GivingMatrix
 
 
-    def remove_triangles(self, Giver, GivingMatrix, SantasList):
-        if not self.__AllowTriangles__:
-            pass
+    def remove_couple_to_couple(self, Giver, GivingMatrix, SantasList):
+        Receiver = self.get_receiver(Giver, SantasList)
+        GiversPartner = self.get_partner(Giver)
+        ReceiversPartner = self.get_partner(Receiver)
+
+        if not self.__AllowCoupleToCouple__ and GiversPartner and ReceiversPartner:
+            GivingMatrix[GiversPartner][ReceiversPartner] = 0
 
         return GivingMatrix
-        
 
 
-    def remove_couple_to_couple(self, Giver, GivingMatrix, SantasList):
-        if not self.__AllowCoupleToCouple__:
-            pass
+    def remove_triangles(self, Giver, GivingMatrix, SantasList):
+        Receiver = self.get_receiver(Giver, SantasList)
+        GiversPartner = self.get_partner(Giver)
+
+        if not self.__AllowTriangles__ and GiversPartner:
+            GivingMatrix[Receiver][GiversPartner] = 0
 
         return GivingMatrix
 
@@ -224,40 +229,6 @@ class SecretSanta():
         # TODO: make this a gui-type thing, http://easygui.sourceforge.net/
         SantasListString = self.santas_list_to_string(SantasList)
         print(SantasListString)
-
-
-
-def RemoveCoupleToCouple(CurrentName):
-    global WeightingMatrix
-
-    Partner = GetPartner(CurrentName)
-
-    if Partner in SantasList and not rules['CoupleToCouple']:
-        ParnterPosition = SantasList.index(Partner)
-
-        # Check if the person they gave to has a partner
-        PartnersReceiver = SantasList[ParnterPosition+1]
-        PartnersReceiversPartner = GetPartner(PartnersReceiver)
-
-        # Now check if the person who gave to them has a partner
-        if ParnterPosition:
-            PartnersGiver = SantasList[ParnterPosition-1]
-            PartnersGiversPartner = GetPartner(PartnersGiver)
-        else:
-            PartnersGiversPartner = None
-
-        # Exclude any pairing involving all four people
-        if PartnersReceiversPartner:
-            RemoveChoice(CurrentName, PartnersReceiversPartner)
-        if PartnersGiversPartner:
-            RemoveChoice(CurrentName, PartnersGiversPartner)
-
-def RemoveTriangles(CurrentName):
-    if not rules['Triangles'] and len(SantasList)>1:
-        Giver = SantasList[-2]
-        GiversPartner = GetPartner(Giver)
-        if GiversPartner != None:
-            RemoveChoice(CurrentName, GiversPartner)
 
 
 def main():

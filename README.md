@@ -49,14 +49,11 @@ The following rules can be set for the list generator:
 
 * `WeightCoupleHistory` (`yes` or `no`)
 
-  Factor couples into the history weighting?
+  Shoudl couples be factored into the history weighting?
 
 * `GrandfatherPeriod` (positive number)
 
-  So that we don't run out of combinations, history needs to matter less and
-  less as time goes on. This variable chooses how many years until history is
-  forgotten (5 is a good number, but will vary according to number of people
-  involved).
+  How many years should it be before giving history doesn't matter?
 
 * `PartnerToPartner` (`yes` or `no`)
 
@@ -64,12 +61,12 @@ The following rules can be set for the list generator:
 
 * `Triangles` (`yes` or `no`)
 
-  Can a person receive a gift from one person, and then give a gift to that
-  person's partner?
+  If Sam receives a gift from Charlie, should they be allowed to give to
+  Charlie's partner?
 
 * `CoupleToCouple` (`yes` or `no`)
 
-  Can two couples be matched up with each other?
+  Can one couple be matched to another couple?
 
 Setting output
 --------------
