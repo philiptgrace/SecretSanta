@@ -2,46 +2,49 @@ Secret Santa List Generator
 ===========================
 Phil Grace, November 2018 and December 2019.
 
-`SecretSanta.py` parses the config file `config.yaml` and generates a Secret
+`SecretSanta.py` parses the config files in `config/` and generates a Secret
 Santa list according to the rules set by the user.
 
 People: Define names, relationships, and history
 ------------------------------------------------
+The file `config/people.yaml` defines all the people involved in the Secret
+Santa.
 
 The syntax is simple: just a person's name, their partner (which can be left
 blank or entirely omitted), and their history written in the form:
 ```
-  Sam:
-    Partner: Charlie
-    History:
-      - Alex
-      - Jamie
+Sam:
+  Partner: Charlie
+  History:
+    - Alex
+    - Jamie
 ```
 In this case, Sam had Alex the year before, and Jamie the year before that. If
 someone wasn't involved in a particular year, leave that year as a blank entry
 (but still put the dash there), _e.g._
 ```
-  Sam:
-    Partner: Charlie
-    History:
-      - Alex
-      -
-      - Jamie
+Sam:
+  Partner: Charlie
+  History:
+    - Alex
+    -
+    - Jamie
 ```
 
 Rigging: Pre-define pairings of giver and receiver
 --------------------------------------------------
+`config/rigging.yaml` allows for pre-defined pairings to be implemented.
 
 If we want to make sure Charlie gives to Sam and Jamie gives to Alex, then the rigging section of the config must be:
 ```
-Rigging:
-  Charlie: Sam
-  Jamie: Alex
+Charlie: Sam
+Jamie: Alex
 ```
 
 Setting rules for list
 ----------------------
-The following rules can be set for the list generator:
+The rules for how the list is to be produced are set in `config/rules.yaml`. The
+following rules can be set:
 
 * `WeightHistory` (`yes` or `no`)
 
@@ -70,7 +73,8 @@ The following rules can be set for the list generator:
 
 Setting output
 --------------
-The options for how the output should be produced are:
+Finally, the output format options are defined in `config/output.yaml`. The
+available options are:
 
 * `PrintingOrder` (one of `GivingOrder`, `ConfigOrder`, or `AlphabeticalOrder`)
 
@@ -78,22 +82,22 @@ The options for how the output should be produced are:
 
   * `GivingOrder` prints in a chain of givers.
     ```
-        Alex → Jamie
-        Jamie → Sam
-        Sam → Charlie
-        Charlie → Alex
+    Alex → Jamie
+    Jamie → Sam
+    Sam → Charlie
+    Charlie → Alex
     ```
   * `ConfigOrder` prints in whatever order is listed in the config file.
     ```
-        Jamie → Sam
-        Sam → Charlie
-        Alex → Jamie
-        Charlie → Alex
+    Jamie → Sam
+    Sam → Charlie
+    Alex → Jamie
+    Charlie → Alex
     ```
   * `AlphabeticalOrder` prints alphabetically by giver.
     ```
-        Alex → Jamie
-        Charlie → Alex
-        Jamie → Sam
-        Sam → Charlie
+    Alex → Jamie
+    Charlie → Alex
+    Jamie → Sam
+    Sam → Charlie
     ```
