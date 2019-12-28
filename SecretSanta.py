@@ -30,10 +30,10 @@ from random import choice, choices
 
 class SecretSanta():
     def __init__(self):
-        self.__PeopleData__ = self.read_yaml("people")
+        self.__PeopleData__ = self.get_people_data()
         self.__Names__ = list(self.__PeopleData__.keys())
 
-        self.__Rules__ = self.read_yaml("rules")
+        self.__Rules__ = self.read_yaml("rules")  # TODO: perform similar cleanup?
         self.__WeightHistory__ = self.__Rules__["WeightHistory"]
         self.__WeightCoupleHistory__ = self.__Rules__["WeightCoupleHistory"]
         self.__GrandfatherPeriod__ = self.__Rules__["GrandfatherPeriod"]
@@ -41,11 +41,10 @@ class SecretSanta():
         self.__AllowTriangles__ = self.__Rules__["Triangles"]
         self.__AllowCoupleToCouple__ = self.__Rules__["CoupleToCouple"]
 
-        self.__OutputRules__ = self.read_yaml("output")
+        self.__OutputRules__ = self.read_yaml("output")  # TODO: perform similar cleanup?
         self.__PrintingOrder__ = self.__OutputRules__["PrintingOrder"]
-        self.__WriteToFile__ = self.__OutputRules__["WriteToFile"]
 
-        self.__Rigging__ = self.read_yaml("rigging")
+        self.__Rigging__ = self.read_yaml("rigging")  # TODO: perform similar cleanup?
 
 
     def read_yaml(self, YAMLLabel):
@@ -54,6 +53,24 @@ class SecretSanta():
             return yaml.safe_load(open(YAMLFileName, "r"))
         except yaml.YAMLError as e:
             sys.exit(f"Error in configuration file {YAMLFileName}: {e}")
+
+
+    def get_people_data(self):
+        """Read in `config/people.yaml` and perform some cleanup and validation of the data."""
+        PeopleData = self.read_yaml("people")
+        Names = PeopleData.keys()
+        for Name in Names:
+            if not PeopleData[Name]:
+                PeopleData[Name] = {}
+            if "Partner" not in PeopleData[Name].keys():
+                PeopleData[Name]["Partner"] = None
+            if "History" not in PeopleData[Name].keys():
+                PeopleData[Name]["History"] = None
+
+        # TODO: check for mispellings of couples and history names,
+        #       check that the couples both point to each other
+
+        return PeopleData
 
 
     def setup_giving_matrix(self):
@@ -115,7 +132,7 @@ class SecretSanta():
             SantasList = self.__try_santas_list()
             if SantasList:
                 return SantasList
-        sys.exit("{MaxTries} iterations ran without finding a valid list!\nMaybe try loosening some of the rules in config.yaml.")
+        sys.exit(f"{MaxTries} iterations ran without finding a valid list!\nMaybe try loosening some of the rules in `config/rules.yaml`.")
 
 
     def get_giver(self, Receiver, SantasList):
@@ -135,10 +152,7 @@ class SecretSanta():
 
 
     def get_partner(self, Name):
-        try:
-            return self.__PeopleData__[Name]["Partner"]
-        except KeyError:
-            return
+        return self.__PeopleData__[Name]["Partner"]
 
     def select_receiver(self, Giver, GivingMatrixRow, InitialGiver, SantasList):
         """Returns `None` if no eligible receiver can be found."""
@@ -158,8 +172,7 @@ class SecretSanta():
 
     def weight_history(self, GivingMatrix):
         for Giver, GiverData in self.__PeopleData__.items():
-            if (self.__WeightHistory__ and
-                GiverData["History"]):
+            if (self.__WeightHistory__ and GiverData["History"]):
 
                 for HistoryDepth, HistoryReceiver in enumerate(GiverData["History"]):
                     if HistoryReceiver:
@@ -235,3 +248,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+main()
