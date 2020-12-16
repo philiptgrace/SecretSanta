@@ -5,7 +5,7 @@
 Secret Santa List Generator
 ===========================
 
-Phil Grace, November 2018 and December 2019
+Phil Grace, November 2018, December 2019, December 2020
 
 `SecretSanta.py` parses the config YAML file and generates a Secret Santa list
 according to the rules set by the user.
@@ -26,17 +26,26 @@ receiver is chosen for every giver with probabilities defined in the
 # - Turn into a webapp
 # - Docstrings, I guess.
 
-import yaml
-import sys
+# TODO: implement logging
+# TODO: write tests
+
+import numpy as np
+import pandas as pd
+from pathlib import Path
 from random import choice, choices
+import sys
+import yaml
 
 
 class SecretSanta:
+    _GivingMatrix = None
+
     def __init__(self):
         self._PeopleData = self.get_people_data()
-        self._Names = list(self._PeopleData.keys())
+        self._names = list(self._PeopleData.keys())
 
-        self._Rules = self.read_yaml("rules")  # TODO: perform similar cleanup?
+        # TODO: validate YAML input
+        self._Rules = self.read_yaml("rules")
         self._WeightHistory = self._Rules["WeightHistory"]
         self._WeightCoupleHistory = self._Rules["WeightCoupleHistory"]
         self._GrandfatherPeriod = self._Rules["GrandfatherPeriod"]
@@ -44,16 +53,58 @@ class SecretSanta:
         self._AllowTriangles = self._Rules["Triangles"]
         self._AllowCoupleToCouple = self._Rules["CoupleToCouple"]
 
-        self._OutputRules = self.read_yaml("output")  # TODO: perform similar cleanup?
+        self._OutputRules = self.read_yaml("output")
         self._PrintingOrder = self._OutputRules["PrintingOrder"]
 
-        self._Rigging = self.read_yaml("rigging")  # TODO: perform similar cleanup?
+        self._Rigging = self.read_yaml("rigging")
+        # TODO: implement blacklist
+
+    @property
+    def names(self):
+        return self._names
+
+    @property
+    def GivingMatrix(self):
+        if self._GivingMatrix is None:
+            # Set up giving matrix if not set up yet
+            self._initialise_giving_matrix()
+        return self._GivingMatrix
+
+    @GivingMatrix.setter
+    def GivingMatrix(self, matrix):
+        self._GivingMatrix = matrix
+
+    def update_matrix(self, giver, receiver, value):
+        self._GivingMatrix[giver][receiver] = value
+
+    def zero_entry(self, giver, receiver):
+        self.update_matrix(giver, receiver, 0)
+
+    def _initialise_giving_matrix(self):
+        n = len(self.names)
+        self._GivingMatrix = pd.DataFrame(
+            np.ones([n, n]) - np.identity(n), columns=self.names, index=self.names,
+        )
+
+        for giver in self.names:
+            # Remove partners
+            partner = self.get_partner(giver)
+            if not self._PartnerToPartnerAllowed and partner:
+                self.zero_entry(giver, partner)
+
+        self._GivingMatrix = self.weight_history(self._GivingMatrix)
+        self._GivingMatrix = self.weight_couple_history(self._GivingMatrix)
+
+        if self._Rigging:
+            self.rig()
 
     def read_yaml(self, YAMLLabel):
-        YAMLFileName = f"config/{YAMLLabel}.yaml"
+        # TODO: get file name with reference to current file path
+        YAMLFileName = Path("config", f"{YAMLLabel}.yaml")
         try:
             return yaml.safe_load(open(YAMLFileName, "r"))
         except yaml.YAMLError as e:
+            # TODO: Replace sys.exit with raises
             sys.exit(f"Error in configuration file {YAMLFileName}: {e}")
 
     def get_people_data(self):
@@ -61,79 +112,48 @@ class SecretSanta:
         Read in `config/people.yaml` and perform some cleanup and validation of the
         data.
         """
-        PeopleData = self.read_yaml("people")
-        Names = PeopleData.keys()
-        for Name in Names:
-            if not PeopleData[Name]:
-                PeopleData[Name] = {}
-            if "Partner" not in PeopleData[Name].keys():
-                PeopleData[Name]["Partner"] = None
-            if "History" not in PeopleData[Name].keys():
-                PeopleData[Name]["History"] = None
-
         # TODO: check for mispellings of couples and history names,
         # TODO: check that the couples both point to each other
 
-        return PeopleData
-
-    def setup_giving_matrix(self):
-        GivingMatrix = {Name: {Name: 1 for Name in self._Names} for Name in self._Names}
-
-        for Giver, GiverData in self._PeopleData.items():
-            # Remove self
-            GivingMatrix[Giver][Giver] = 0
-
-            # Remove partners
-            GiverPartner = self.get_partner(Giver)
-            if not self._PartnerToPartnerAllowed and GiverPartner:
-                GivingMatrix[Giver][GiverPartner] = 0
-
-        GivingMatrix = self.weight_history(GivingMatrix)
-
-        return GivingMatrix
-
-    def select_starting_name(self):
-        # Have a better chance of getting the list right if we start with one of
-        # the rigged givers.
-        if self._Rigging:
-            return choice(list(self._Rigging.keys()))
-        return choice(self._Names)
+        return self.read_yaml("people")
 
     def try_santas_list(self):
-        """If one person has no viable givers, then will return `None`."""
+        # Force reinitialisation
+        self._GivingMatrix = None
+
         SantasList = []
-        GivingMatrix = self.setup_giving_matrix()
 
-        InitialGiver = self.select_starting_name()
-        Giver = InitialGiver
+        InitialGiver = choice(self.names)
+        giver = InitialGiver
 
-        while len(SantasList) < len(self._Names):
-            GivingMatrixRow = GivingMatrix[Giver]
-            Receiver = self.select_receiver(
-                Giver, GivingMatrixRow, InitialGiver, SantasList
+        while len(SantasList) < len(self.names):
+            GivingMatrixRow = self.GivingMatrix[giver]
+            receiver = self.select_receiver(
+                giver, GivingMatrixRow, InitialGiver, SantasList
             )
-            if not Receiver:
-                return
+            if not receiver:
+                raise RuntimeError(f"No viable receivers for {giver}.")
 
-            SantasList.append((Giver, Receiver))
+            SantasList.append((giver, receiver))
 
             # Remove this name from everyone's potential receivers, and remove
             # now-invalid combinations
-            for Name in self._Names:
-                GivingMatrix[Name][Receiver] = 0
-            GivingMatrix = self.remove_triangles(Giver, GivingMatrix, SantasList)
-            GivingMatrix = self.remove_couple_to_couple(Giver, GivingMatrix, SantasList)
+            for name in self.names:
+                self.zero_entry(name, receiver)
+            self.GivingMatrix = self.remove_triangles(giver, self.GivingMatrix, SantasList)
+            self.GivingMatrix = self.remove_couple_to_couple(giver, self.GivingMatrix, SantasList)
 
-            Giver = Receiver
+            giver = receiver
 
         return SantasList
 
     def get_santas_list(self):
-        MaxTries = 10000
+        MaxTries = 100000
         for i in range(MaxTries):
-            SantasList = self.try_santas_list()
-            if SantasList:
-                return SantasList
+            try:
+                return self.try_santas_list()
+            except RuntimeError:
+                pass
         sys.exit(
             f"{MaxTries} iterations ran without finding a valid list!\n"
             "Maybe try loosening some of the rules in `config/rules.yaml`."
@@ -154,61 +174,89 @@ class SecretSanta:
             return
 
     def get_partner(self, Name):
-        return self._PeopleData[Name]["Partner"]
+        try:
+            return self._PeopleData[Name]["Partner"]
+        except (TypeError, KeyError):
+            return
 
     def select_receiver(self, Giver, GivingMatrixRow, InitialGiver, SantasList):
         """Returns `None` if no eligible receiver can be found."""
         # Don't allow the first giver to be a receiver until the list is almost complete
-        if len(SantasList) < len(self._Names) - 1:
+        if len(SantasList) < len(self.names) - 1:
             GivingMatrixRow[InitialGiver] = 0
 
-        PossibleReceivers = list(GivingMatrixRow.keys())
-        ReceiverWeights = list(GivingMatrixRow.values())
-
-        if self._Rigging and Giver in self._Rigging.keys():
-            return self._Rigging[Giver]
+        PossibleReceivers = list(GivingMatrixRow.index)
+        ReceiverWeights = list(GivingMatrixRow)
 
         if sum(ReceiverWeights):
             return choices(PossibleReceivers, ReceiverWeights)[0]
 
+    def rig(self):
+        for giver, receiver in self._Rigging.items():
+            for name in self.names:
+                if name != receiver:
+                    self.zero_entry(giver, name)
+
+    def get_history(self, giver):
+        GiverData = self._PeopleData[giver]
+        try:
+            return GiverData["History"] or []
+        except (TypeError, KeyError):
+            return []
+
     def weight_history(self, GivingMatrix):
-        for Giver, GiverData in self._PeopleData.items():
-            if self._WeightHistory and GiverData["History"]:
+        if not self._WeightHistory:
+            return GivingMatrix
 
-                for HistoryDepth, HistoryReceiver in enumerate(GiverData["History"]):
-                    if HistoryReceiver:
-                        GivingMatrix[Giver][
-                            HistoryReceiver
-                        ] = self.history_weighting_function(
-                            HistoryDepth, GivingMatrix[Giver][HistoryReceiver]
-                        )
+        for giver in self.names:
+            history = self.get_history(giver)
+            for depth, receiver in enumerate(history):
+                if not receiver:
+                    continue
 
-                        # Give the same weighting across couples if one member is part
-                        # of the history
-                        GiversPartner = self.get_partner(Giver)
-                        ReceiversPartner = self.get_partner(HistoryReceiver)
+                weight = self.history_weighting_function
+                GivingMatrix[giver][receiver] = weight(
+                    depth, GivingMatrix[giver][receiver]
+                )
+                value = weight(depth, GivingMatrix[giver][receiver])
+                self.update_matrix(giver, receiver, value)
 
-                        if self._WeightCoupleHistory:
-                            if ReceiversPartner:
-                                GivingMatrix[Giver][
-                                    ReceiversPartner
-                                ] = self.history_weighting_function(
-                                    HistoryDepth, GivingMatrix[Giver][ReceiversPartner]
-                                )
-                            if GiversPartner:
-                                GivingMatrix[GiversPartner][
-                                    HistoryReceiver
-                                ] = self.history_weighting_function(
-                                    HistoryDepth,
-                                    GivingMatrix[GiversPartner][HistoryReceiver],
-                                )
-                            if GiversPartner and ReceiversPartner:
-                                GivingMatrix[GiversPartner][
-                                    ReceiversPartner
-                                ] = self.history_weighting_function(
-                                    HistoryDepth,
-                                    GivingMatrix[GiversPartner][ReceiversPartner],
-                                )
+        return GivingMatrix
+
+    def weight_couple_history(self, GivingMatrix):
+        """
+        Give the same weighting across couples if one member is part of the history.
+        """
+
+        if not (self._WeightHistory and self._WeightCoupleHistory):
+            return GivingMatrix
+
+        for giver in self.names:
+            history = self.get_history(giver)
+            for depth, receiver in enumerate(history):
+                if not receiver:
+                    continue
+
+                weight = self.history_weighting_function
+                GivingMatrix[giver][receiver] = weight(
+                    depth, GivingMatrix[giver][receiver]
+                )
+
+                GiversPartner = self.get_partner(giver)
+                ReceiversPartner = self.get_partner(receiver)
+
+                if ReceiversPartner:
+                    GivingMatrix[giver][ReceiversPartner] = weight(
+                        depth, GivingMatrix[giver][ReceiversPartner]
+                    )
+                if GiversPartner:
+                    GivingMatrix[GiversPartner][receiver] = weight(
+                        depth, GivingMatrix[GiversPartner][receiver],
+                    )
+                if GiversPartner and ReceiversPartner:
+                    GivingMatrix[GiversPartner][ReceiversPartner] = weight(
+                        depth, GivingMatrix[GiversPartner][ReceiversPartner],
+                    )
 
         return GivingMatrix
 
@@ -240,7 +288,7 @@ class SecretSanta:
     def santas_list_to_string(self, SantasList):
         if self._PrintingOrder == "ConfigOrder":
             SantasList = [
-                (Giver, self.get_receiver(Giver, SantasList)) for Giver in self._Names
+                (Giver, self.get_receiver(Giver, SantasList)) for Giver in self.names
             ]
         elif self._PrintingOrder == "GivingOrder":
             pass
