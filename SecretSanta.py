@@ -33,7 +33,6 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from random import choice, choices
-import sys
 import yaml
 
 
@@ -41,8 +40,11 @@ class SecretSanta:
     _GivingMatrix = None
 
     def __init__(self):
+        # FIXME
         self._PeopleData = self.get_people_data()
-        self._names = list(self._PeopleData.keys())
+        self.names = list(self._PeopleData.keys())
+
+        self.validate_people_data()
 
         # TODO: validate YAML input
         self._Rules = self.read_yaml("rules")
@@ -62,6 +64,10 @@ class SecretSanta:
     @property
     def names(self):
         return self._names
+
+    @names.setter
+    def names(self, value):
+        self._names = value
 
     @property
     def GivingMatrix(self):
@@ -99,25 +105,52 @@ class SecretSanta:
             self.rig()
 
     def read_yaml(self, YAMLLabel):
-        # TODO: get file name with reference to current file path
-        YAMLFileName = Path("config", f"{YAMLLabel}.yaml")
+        try:
+            cwd = Path(__file__).resolve().parent
+        except NameError:
+            # Allow running in a script
+            cwd = Path.cwd()
+
+        YAMLFileName = cwd / "config" / f"{YAMLLabel}.yaml"
         try:
             return yaml.safe_load(open(YAMLFileName, "r"))
         except yaml.YAMLError as e:
-            # TODO: Replace sys.exit with raises
-            sys.exit(f"Error in configuration file {YAMLFileName}: {e}")
+            raise RuntimeError(f"Error in configuration file {YAMLFileName}") from e
 
     def get_people_data(self):
-        """
-        Read in `config/people.yaml` and perform some cleanup and validation of the
-        data.
-        """
-        # TODO: check for mispellings of couples and history names,
-        # TODO: check that the couples both point to each other
-
         return self.read_yaml("people")
 
+    def validate_people_data(self):
+        # FIXME
+        for name in self.names:
+            # Validate partners
+            partner = self.get_partner(name)
+            if partner:
+                if partner not in self.names:
+                    raise ValueError(
+                        "{name}'s partner not a recognised name: {partner}"
+                    )
+                if self.get_partner(partner) != name:
+                    raise ValueError(
+                        f"Error in `config/people.yaml`. {name} and {partner} are not "
+                        "both listed as each others partner."
+                    )
+
+            # Validate histories
+            history = self.get_history(name)
+            UnknownNames = [
+                receiver
+                for receiver in filter(None, history)
+                if receiver not in self.names
+            ]
+            if UnknownNames:
+                raise ValueError(
+                    f"Unknown people in {name}'s giving history: "
+                    f"{', '.join(UnknownNames)}."
+                )
+
     def try_santas_list(self):
+        # FIXME
         # Force reinitialisation
         self._GivingMatrix = None
 
@@ -140,26 +173,33 @@ class SecretSanta:
             # now-invalid combinations
             for name in self.names:
                 self.zero_entry(name, receiver)
-            self.GivingMatrix = self.remove_triangles(giver, self.GivingMatrix, SantasList)
-            self.GivingMatrix = self.remove_couple_to_couple(giver, self.GivingMatrix, SantasList)
+            self.GivingMatrix = self.remove_triangles(
+                giver, self.GivingMatrix, SantasList
+            )
+            self.GivingMatrix = self.remove_couple_to_couple(
+                giver, self.GivingMatrix, SantasList
+            )
 
             giver = receiver
 
         return SantasList
 
     def get_santas_list(self):
+        # FIXME
         MaxTries = 100000
         for i in range(MaxTries):
             try:
                 return self.try_santas_list()
             except RuntimeError:
                 pass
-        sys.exit(
+
+        raise RuntimeError(
             f"{MaxTries} iterations ran without finding a valid list!\n"
             "Maybe try loosening some of the rules in `config/rules.yaml`."
         )
 
     def get_giver(self, Receiver, SantasList):
+        # FIXME
         PairLookup = {Receiver: Giver for (Giver, Receiver) in SantasList}
         try:
             return PairLookup[Receiver]
@@ -167,6 +207,7 @@ class SecretSanta:
             return
 
     def get_receiver(self, Giver, SantasList):
+        # FIXME
         PairLookup = {Giver: Receiver for (Giver, Receiver) in SantasList}
         try:
             return PairLookup[Giver]
@@ -174,12 +215,14 @@ class SecretSanta:
             return
 
     def get_partner(self, Name):
+        # FIXME
         try:
             return self._PeopleData[Name]["Partner"]
         except (TypeError, KeyError):
             return
 
     def select_receiver(self, Giver, GivingMatrixRow, InitialGiver, SantasList):
+        # FIXME
         """Returns `None` if no eligible receiver can be found."""
         # Don't allow the first giver to be a receiver until the list is almost complete
         if len(SantasList) < len(self.names) - 1:
@@ -192,12 +235,14 @@ class SecretSanta:
             return choices(PossibleReceivers, ReceiverWeights)[0]
 
     def rig(self):
+        # FIXME
         for giver, receiver in self._Rigging.items():
             for name in self.names:
                 if name != receiver:
                     self.zero_entry(giver, name)
 
     def get_history(self, giver):
+        # FIXME
         GiverData = self._PeopleData[giver]
         try:
             return GiverData["History"] or []
@@ -205,25 +250,23 @@ class SecretSanta:
             return []
 
     def weight_history(self, GivingMatrix):
+        # FIXME
         if not self._WeightHistory:
             return GivingMatrix
 
+        weight = self.history_weighting_function
         for giver in self.names:
             history = self.get_history(giver)
             for depth, receiver in enumerate(history):
-                if not receiver:
-                    continue
-
-                weight = self.history_weighting_function
-                GivingMatrix[giver][receiver] = weight(
-                    depth, GivingMatrix[giver][receiver]
-                )
-                value = weight(depth, GivingMatrix[giver][receiver])
-                self.update_matrix(giver, receiver, value)
+                if receiver:
+                    self.update_matrix(
+                        giver, receiver, weight(depth, GivingMatrix[giver][receiver])
+                    )
 
         return GivingMatrix
 
     def weight_couple_history(self, GivingMatrix):
+        # FIXME
         """
         Give the same weighting across couples if one member is part of the history.
         """
@@ -240,6 +283,9 @@ class SecretSanta:
                 weight = self.history_weighting_function
                 GivingMatrix[giver][receiver] = weight(
                     depth, GivingMatrix[giver][receiver]
+                )
+                self.update_matrix(
+                    giver, receiver, weight(depth, GivingMatrix[giver][receiver])
                 )
 
                 GiversPartner = self.get_partner(giver)
@@ -261,6 +307,7 @@ class SecretSanta:
         return GivingMatrix
 
     def remove_couple_to_couple(self, Giver, GivingMatrix, SantasList):
+        # FIXME
         Receiver = self.get_receiver(Giver, SantasList)
         GiversPartner = self.get_partner(Giver)
         ReceiversPartner = self.get_partner(Receiver)
@@ -271,6 +318,7 @@ class SecretSanta:
         return GivingMatrix
 
     def remove_triangles(self, Giver, GivingMatrix, SantasList):
+        # FIXME
         Receiver = self.get_receiver(Giver, SantasList)
         GiversPartner = self.get_partner(Giver)
 
@@ -280,12 +328,14 @@ class SecretSanta:
         return GivingMatrix
 
     def history_weighting_function(self, HistoryDepth, CurrentWeighting):
+        # FIXME
         try:
             return min((HistoryDepth / self._GrandfatherPeriod) ** 2, CurrentWeighting)
         except ZeroDivisionError:
             return 1
 
     def santas_list_to_string(self, SantasList):
+        # FIXME
         if self._PrintingOrder == "ConfigOrder":
             SantasList = [
                 (Giver, self.get_receiver(Giver, SantasList)) for Giver in self.names
@@ -295,7 +345,7 @@ class SecretSanta:
         elif self._PrintingOrder == "AlphabeticalOrder":
             SantasList = sorted(SantasList)
         else:
-            sys.exit(
+            raise ValueError(
                 "Please privide a giving order which is either 'ConfigOrder', "
                 "'GivingOrder', or 'AlphabeticalOrder'."
             )
@@ -304,12 +354,14 @@ class SecretSanta:
         return "\n".join(ListOfStrings)
 
     def print_list(self, SantasList):
+        # FIXME
         # TODO: make this a gui-type thing, http://easygui.sourceforge.net/
         SantasListString = self.santas_list_to_string(SantasList)
         print(SantasListString)
 
 
 def main():
+    # FIXME
     Santa = SecretSanta()
     SantasList = Santa.get_santas_list()
     Santa.print_list(SantasList)
@@ -317,3 +369,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+main()
